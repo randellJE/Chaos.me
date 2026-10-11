@@ -1,0 +1,72 @@
+import { test, expect } from '@playwright/test';
+test('plan goals, track inventory, persist and export progress', async ({page}) => {
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/');
+  await expect(page.locator('.roster-card')).toHaveCount(2);
+  await page.locator('[data-filter="4"]').click();
+  await expect(page.locator('.roster-card')).toHaveCount(1);
+  await page.locator('[data-filter="All"]').click();
+  await page.getByLabel('Search combatants').fill('"<test>');
+  await expect(page.locator('.roster-card')).toHaveCount(0);
+  await page.getByLabel('Search combatants').fill('');
+  await page.locator('[data-toggle="c5"]').click();
+  await page.getByRole('button', {name:'Edit Combatant 01',exact:true}).click();
+  await page.getByLabel('Combatant 01 target level',{exact:true}).fill('20');
+  await page.getByLabel('Combatant 01 target level',{exact:true}).press('Tab');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.locator('nav [data-page="Partners"]').click();
+  await expect(page.locator('.roster-card')).toHaveCount(3);
+  await page.locator('[data-toggle="p3"]').click();
+  await page.locator('nav [data-page="Materials"]').click();
+  await page.getByLabel('Credits owned').fill('999999');
+  await page.getByLabel('Credits owned').press('Tab');
+  await page.reload();
+  await page.getByRole('button', {name:'Edit Combatant 01',exact:true}).click();
+  await expect(page.getByLabel('Combatant 01 target level',{exact:true})).toHaveValue('20');
+  await page.getByRole('button',{name:'Close editor'}).click();
+  await page.locator('nav [data-page="Overview"]').click();
+  await expect(page.locator('.goal-row')).toHaveCount(2);
+  await page.locator('nav [data-page="Settings"]').click();
+  const download=page.waitForEvent('download');await page.getByText('Export progress').click();
+  expect((await download).suggestedFilename()).toBe('chaos-planner.json');
+  await page.locator('#import').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({goals:{c4:{enabled:true,current:10,target:30}},inventory:{credits:1000},energy:55}))});
+  await expect(page.locator('#toast')).toHaveText('Progress imported');
+  await expect(page.locator('#energy')).toHaveValue('55');
+  await page.locator('nav [data-page="Overview"]').click();await expect(page.locator('.goal-row')).toHaveCount(1);
+  await expect(page.locator('.goal-row')).toContainText('Combatant 02');
+  expect(errors).toEqual([]);
+});
+test('mobile pages fit viewport', async ({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  for(const section of ['Combatants','Partners','Materials','Overview','Settings']){
+    await page.locator(`nav [data-page="${section}"]`).click();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test('editor skills, partner assignment, saving, cancel and keyboard dismissal', async ({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Edit Combatant 01',exact:true}).click();
+  await page.getByRole('tab',{name:'SKILLS',exact:true}).click();
+  await page.getByLabel('Basic skill target', {exact:true}).fill('4');
+  await page.getByLabel('Basic skill target', {exact:true}).press('Tab');
+  await expect(page.locator('#editor-costs')).toContainText('needed');
+  await page.getByRole('tab',{name:'PARTNER',exact:true}).click();
+  await page.getByLabel('Assigned partner').selectOption('p5');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.reload();await page.getByRole('button',{name:'Edit Combatant 01',exact:true}).click();
+  await page.getByRole('tab',{name:'SKILLS',exact:true}).click();
+  await expect(page.getByLabel('Basic skill target',{exact:true})).toHaveValue('4');
+  await page.getByRole('tab',{name:'PARTNER',exact:true}).click();
+  await expect(page.getByLabel('Assigned partner')).toHaveValue('p5');
+  await page.getByRole('tab',{name:'LEVEL',exact:true}).click();
+  await page.getByLabel('Combatant 01 target level',{exact:true}).fill('30');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByRole('button',{name:'Edit Combatant 01',exact:true}).click();
+  await expect(page.getByLabel('Combatant 01 target level',{exact:true})).toHaveValue('60');
+  await page.keyboard.press('Escape');await expect(page.locator('#unit-editor')).toHaveCount(0);
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Edit Combatant 01',exact:true}).click();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('tab',{name:'SKILLS',exact:true}).click();
+  expect(await page.locator('#unit-editor').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+});
